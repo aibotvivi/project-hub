@@ -997,10 +997,16 @@ function App() {
   const activeDateFilter = dateFilter || (dateGroups[0] || null);
 
   const filtered = useMemo(() => {
-    return getMemberThreads(member).filter((th) => {
-      if (activeDateFilter && threadDateLabel(th) !== activeDateFilter) return false;
-      return true;
-    });
+    return getMemberThreads(member)
+      .filter((th) => {
+        if (activeDateFilter && threadDateLabel(th) !== activeDateFilter) return false;
+        return true;
+      })
+      // Newest update at the top. Threads without a ts (static demo data)
+      // keep their original relative order and fall to the bottom.
+      .map((th, i) => ({ th, i }))
+      .sort((a, b) => (b.th.ts || 0) - (a.th.ts || 0) || a.i - b.i)
+      .map((x) => x.th);
   }, [member, activeDateFilter, autoThreads]);
 
   const counts = useMemo(() => {
