@@ -330,6 +330,9 @@ function CodeBlock({ lang, code }) {
   const [crossOpen, setCrossOpen] = React.useState(false);
   const [hasReview, setHasReview] = React.useState(false);
   const isPreviewable = lang === "html" || (!lang && /<(!DOCTYPE|html)/i.test(code));
+  const lineCount = React.useMemo(() => code.split("\n").length, [code]);
+  const isLong = lineCount > 14;
+  const [collapsed, setCollapsed] = React.useState(isLong); // long blocks start collapsed
 
   React.useEffect(() => {
     let alive = true;
@@ -377,7 +380,12 @@ function CodeBlock({ lang, code }) {
     <>
       <div className="msg-code">
         <div className="msg-code-header">
-          {lang && <span className="msg-code-lang">{lang}</span>}
+          <button className="msg-code-toggle" onClick={() => setCollapsed((c) => !c)}
+            title={collapsed ? "Expand code" : "Collapse code"}>
+            <span className={"msg-code-caret" + (collapsed ? "" : " is-open")}>▶</span>
+            {lang && <span className="msg-code-lang">{lang}</span>}
+            <span className="msg-code-lines">{lineCount} lines</span>
+          </button>
           <div style={{ display: "flex", gap: 6 }}>
             {isPreviewable && (
               <button className="msg-code-preview" onClick={() => setPreviewing(true)}>Preview ▶</button>
@@ -393,7 +401,11 @@ function CodeBlock({ lang, code }) {
             <button className="msg-code-copy" onClick={doCopy}>{copied ? "Copied ✓" : "Copy"}</button>
           </div>
         </div>
-        <pre className="msg-code-pre"><code>{code}</code></pre>
+        {collapsed
+          ? <button className="msg-code-collapsed" onClick={() => setCollapsed(false)}>
+              {lineCount} lines hidden — click to expand
+            </button>
+          : <pre className="msg-code-pre"><code>{code}</code></pre>}
         {crossOpen && <CrossCheckPanel content={code} context={"This is " + (lang || "code") + " produced by an AI team member."} />}
         {publishState === "done" && (
           <div className="msg-code-published">
