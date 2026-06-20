@@ -973,6 +973,25 @@ html[data-theme="dark"] .switcher-item.is-active { background: oklch(0.29 0.008 
 html[data-theme="dark"] .msg-code-pre code { color: var(--ink); }
 html[data-theme="dark"] .card { background: var(--surface); }
 
+/* dark-mode: light-tinted backgrounds that trapped light text (light-on-light) */
+html[data-theme="dark"] .goals-banner { background: oklch(0.27 0.022 260); border-bottom-color: var(--line); }
+html[data-theme="dark"] .goals-banner-icon,
+html[data-theme="dark"] .goals-banner-label { color: oklch(0.78 0.1 260); }
+html[data-theme="dark"] .date-pill-active { background: oklch(0.34 0.012 75); color: var(--ink); }
+html[data-theme="dark"] .card-question { background: oklch(0.255 0.022 38); border-color: oklch(0.42 0.06 38); }
+html[data-theme="dark"] .card-question .card-head { border-bottom-color: oklch(0.38 0.04 38); }
+/* tinted "active" chips: dark bg + light text instead of light bg + dark text */
+html[data-theme="dark"] .app[data-tab="underline"] .tab.is-active .tab-count,
+html[data-theme="dark"] .app[data-tab="pill"] .tab.is-active,
+html[data-theme="dark"] .app[data-tab="pill"] .tab.is-active .tab-count {
+  background: oklch(0.35 0.06 var(--tab-hue, 260)); color: oklch(0.86 0.1 var(--tab-hue, 260));
+}
+html[data-theme="dark"] .np-type-chip.is-active {
+  background: oklch(0.32 0.06 var(--chip-hue, 260)); color: oklch(0.86 0.09 var(--chip-hue, 260));
+}
+/* message "from member" bubble + status pill text legibility on dark */
+html[data-theme="dark"] .status-pill { filter: brightness(0.85) saturate(1.1); }
+
 /* ── RESPONSIVE / MOBILE ── */
 @media (max-width: 640px) {
   .topnav-brand { flex-wrap: wrap; gap: 8px; padding: 8px 12px; }
@@ -1017,9 +1036,9 @@ html[data-theme="dark"] .card { background: var(--surface); }
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
 
-<script src="data.jsx?v=43"></script>
-<script type="text/babel" src="tweaks-panel.jsx?v=43"></script>
-<script type="text/babel" src="components.jsx?v=43"></script>
-<script type="text/babel" src="app.jsx?v=43"></script>
+<script src="data.jsx?v=44"></script>
+<script type="text/babel" src="tweaks-panel.jsx?v=44"></script>
+<script type="text/babel" src="components.jsx?v=44"></script>
+<script type="text/babel" src="app.jsx?v=44"></script>
 </body>
 </html>
