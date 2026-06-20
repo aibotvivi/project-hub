@@ -220,34 +220,80 @@ class Handler(SimpleHTTPRequestHandler):
         if history_parts:
             full_system += "\n\nConversation so far:\n" + "\n\n".join(history_parts)
 
-        # --tools "" and --setting-sources "" skip the agent tool-loop and project
-        # context (CLAUDE.md/skills/MCP), roughly halving latency for plain text gen.
+        # Stream tokens as they generate — no hard timeout wall, and the client
+        # shows the reply (and code) building live. --tools/--setting-sources ""
+        # skip agent overhead for plain text generation.
         cmd = [
             CLAUDE_BIN,
             "-p", user_msg,
             "--system-prompt", full_system,
             "--tools", "",
             "--setting-sources", "",
-            "--output-format", "json",
+            "--output-format", "stream-json",
+            "--include-partial-messages",
+            "--verbose",
             "--model", "claude-sonnet-4-6",
         ]
 
-        try:
-            result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=180
-            )
-            output = json.loads(result.stdout)
-            text   = output.get("result", "").strip()
-            if not text:
-                text = result.stderr.strip() or "No response from Claude Code."
-        except subprocess.TimeoutExpired:
-            text = "⚠️ Response timed out (180s). Try a shorter message or simpler request."
-        except Exception as e:
-            text = f"⚠️ Error calling Claude Code: {e}"
-        finally:
-            claude_sem.release()
+        # Streaming NDJSON response: each line is {"d": "<delta>"} | {"done":1} | {"err": "..."}
+        self.send_response(200)
+        self.send_header("Content-Type", "application/x-ndjson")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "close")
+        self._cors()
+        self.end_headers()
 
-        self._json({"text": text})
+        proc = None
+        def _emit(obj):
+            self.wfile.write((json.dumps(obj) + "\n").encode())
+            self.wfile.flush()
+
+        try:
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
+            # Safety net: kill a stuck process after 10 minutes of no completion.
+            killer = threading.Timer(600, proc.kill)
+            killer.start()
+            got_any = False
+            while True:
+                # readline() yields each line as soon as it's newline-terminated —
+                # avoids the read-ahead batching of `for line in proc.stdout`.
+                line = proc.stdout.readline()
+                if not line:
+                    break
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except Exception:
+                    continue
+                if obj.get("type") == "stream_event":
+                    ev = obj.get("event", {})
+                    if ev.get("type") == "content_block_delta":
+                        delta = ev.get("delta", {})
+                        if delta.get("type") == "text_delta" and delta.get("text"):
+                            got_any = True
+                            _emit({"d": delta["text"]})
+                elif obj.get("type") == "result" and not got_any:
+                    # Fallback if no deltas were streamed
+                    res = (obj.get("result") or "").strip()
+                    if res:
+                        _emit({"d": res})
+            proc.wait()
+            killer.cancel()
+            if not got_any and proc.returncode not in (0, None):
+                err = (proc.stderr.read() or "").strip()
+                _emit({"err": "⚠️ " + (err[:300] or "No response from Claude Code.")})
+            _emit({"done": 1})
+        except (BrokenPipeError, ConnectionResetError):
+            pass  # client navigated away mid-stream
+        except Exception as e:
+            try: _emit({"err": f"⚠️ Error calling Claude Code: {e}"})
+            except Exception: pass
+        finally:
+            if proc and proc.poll() is None:
+                proc.kill()
+            claude_sem.release()
 
     # ── Helpers ───────────────────────────────────────────────────────────
     def _json(self, data):

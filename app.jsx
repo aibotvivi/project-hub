@@ -20,6 +20,14 @@ function formatMsgTime() {
 }
 function setMode(m) { localStorage.setItem("hub_mode", m); }
 
+// ── Theme (light / dark) ──────────────────────────────────────────────────
+function getTheme() { return localStorage.getItem("hub_theme") || "light"; }
+function applyTheme(theme) {
+  if (theme === "dark") document.documentElement.setAttribute("data-theme", "dark");
+  else document.documentElement.removeAttribute("data-theme");
+}
+applyTheme(getTheme()); // apply immediately on script load to avoid flash
+
 // Absolute-timestamp date labelling — reliable across days (unlike frozen strings)
 function labelFromTs(ts) {
   const d = new Date(ts);
@@ -139,9 +147,30 @@ async function callClaudeProxy({ systemPrompt, messages, onChunk, onDone, backgr
       body: JSON.stringify({ systemPrompt, messages, background: !!background }),
     });
     if (!res.ok) { onChunk(`⚠️ Server error ${res.status}`); onDone(); return; }
-    const data = await res.json();
-    if (data.skipped) { onDone({ skipped: true }); return; } // server busy — try later
-    onChunk(data.text || "No response.");
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "", skipped = false;
+    const handle = (line) => {
+      const t = line.trim();
+      if (!t) return;
+      let obj; try { obj = JSON.parse(t); } catch { return; }
+      if (obj.skipped) skipped = true;          // background yielded — try later
+      else if (obj.d) onChunk(obj.d);            // streamed text delta
+      else if (obj.err) onChunk(obj.err);        // error message
+      // obj.done → end marker, ignore
+    };
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split("\n");
+      buf = lines.pop() || "";
+      for (const line of lines) handle(line);
+    }
+    if (buf) handle(buf); // trailing object (e.g. the skip response has no newline)
+    onDone(skipped ? { skipped: true } : undefined);
+    return;
   } catch (e) {
     onChunk(`⚠️ Could not reach local server: ${e.message}`);
   }
@@ -894,6 +923,7 @@ function App() {
   const [streaming, setStreaming] = useState(false);
   const [action, setAction] = useState(null);
   const [showNewProject, setShowNewProject] = useState(false);
+  const [theme, setThemeState] = useState(getTheme);
   const [webhooks, setWebhooks] = useState(getWebhooks);
   const [autoThreads, setAutoThreads] = useState(getStoredAutoThreads);
   const [working, setWorking] = useState({});
@@ -987,6 +1017,13 @@ function App() {
   function updateWebhook(platform, url) {
     saveWebhookUrl(platform, url);
     setWebhooks(getWebhooks());
+  }
+
+  function toggleTheme() {
+    const next = theme === "dark" ? "light" : "dark";
+    setThemeState(next);
+    localStorage.setItem("hub_theme", next);
+    applyTheme(next);
   }
 
   function toggleShipMode() {
@@ -1232,6 +1269,10 @@ BODY: <2-4 sentences of your update, OR your specific question to the founder>`;
           >
             <span className="just-ship-dot" />
             {justShipIt ? "Autonomous" : "Collaborative"}
+          </button>
+          <button className="theme-toggle" onClick={toggleTheme}
+            title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}>
+            {theme === "dark" ? "☀" : "☾"}
           </button>
           <ProjectSwitcher projects={allProjects} activeId={projectId} onSelect={selectProject} onNewProject={() => setShowNewProject(true)} />
         </div>
