@@ -11,6 +11,9 @@ REVIEWS_FILE = os.path.join(ROOT, "reviews.json")
 BUILDS_DIR   = os.path.join(ROOT, "builds")
 CLAUDE_BIN = os.path.expanduser("~/.local/bin/claude")
 lock       = threading.Lock()
+# Only one Claude call at a time — concurrent calls throttle each other badly
+# (a ~10s call degrades to ~35s under contention). Serializing keeps each fast.
+claude_sem = threading.Semaphore(1)
 
 
 def _safe_id(s):
@@ -191,11 +194,21 @@ class Handler(SimpleHTTPRequestHandler):
         data          = json.loads(body)
         system_prompt = data.get("systemPrompt", "")
         messages      = data.get("messages", [])
+        is_background = bool(data.get("background", False))
 
         # Last message is the user's new input; prior messages become history
         if not messages:
             self._json({"text": "No message provided."})
             return
+
+        # Serialize Claude calls. Background updates yield: if Claude is busy,
+        # they skip rather than queue, so interactive chat never waits behind them.
+        if is_background:
+            if not claude_sem.acquire(blocking=False):
+                self._json({"text": "", "skipped": True})
+                return
+        else:
+            claude_sem.acquire()
 
         user_msg      = messages[-1]["content"]
         history_parts = []
@@ -231,6 +244,8 @@ class Handler(SimpleHTTPRequestHandler):
             text = "⚠️ Response timed out (180s). Try a shorter message or simpler request."
         except Exception as e:
             text = f"⚠️ Error calling Claude Code: {e}"
+        finally:
+            claude_sem.release()
 
         self._json({"text": text})
 

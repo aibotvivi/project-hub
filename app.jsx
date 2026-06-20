@@ -131,15 +131,16 @@ function extractContent(thread, userText) {
 }
 
 // ── Claude Code proxy (uses your subscription via local server) ───────────
-async function callClaudeProxy({ systemPrompt, messages, onChunk, onDone }) {
+async function callClaudeProxy({ systemPrompt, messages, onChunk, onDone, background }) {
   try {
     const res = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ systemPrompt, messages }),
+      body: JSON.stringify({ systemPrompt, messages, background: !!background }),
     });
     if (!res.ok) { onChunk(`⚠️ Server error ${res.status}`); onDone(); return; }
     const data = await res.json();
+    if (data.skipped) { onDone({ skipped: true }); return; } // server busy — try later
     onChunk(data.text || "No response.");
   } catch (e) {
     onChunk(`⚠️ Could not reach local server: ${e.message}`);
@@ -147,9 +148,9 @@ async function callClaudeProxy({ systemPrompt, messages, onChunk, onDone }) {
   onDone();
 }
 
-async function callClaude({ systemPrompt, messages, onChunk, onDone }) {
+async function callClaude({ systemPrompt, messages, onChunk, onDone, background }) {
   if (getMode() === "proxy") {
-    return callClaudeProxy({ systemPrompt, messages, onChunk, onDone });
+    return callClaudeProxy({ systemPrompt, messages, onChunk, onDone, background });
   }
   const key = getStoredKey();
   if (!key) {
@@ -1043,12 +1044,21 @@ TYPE: <status or proposal or learning or question>
 BODY: <2-4 sentences of your update, OR your specific question to the founder>`;
 
     let text = "";
+    let skipped = false;
     await callClaude({
       systemPrompt,
-      messages: [{ role: "user", content: prompt }],
+      messages: [{ role: "user", content: prompt + "\n\nKeep it brief — a few sentences, no code blocks." }],
+      background: true,
       onChunk: (chunk) => { text += chunk; },
-      onDone: () => {},
+      onDone: (info) => { if (info && info.skipped) skipped = true; },
     });
+
+    // Server was busy with the founder's chat — bail without consuming a slot.
+    if (skipped) {
+      workingRef.current[mem.id] = false;
+      setWorking(prev => ({ ...prev, [mem.id]: false }));
+      return;
+    }
 
     const titleMatch = text.match(/^TITLE:\s*(.+)/m);
     const typeMatch  = text.match(/^TYPE:\s*(\w+)/m);
@@ -1072,9 +1082,9 @@ BODY: <2-4 sentences of your update, OR your specific question to the founder>`;
         saveAutoThreads(next);
         return next;
       });
+      sessionCountRef.current[mem.id] = (sessionCountRef.current[mem.id] || 0) + 1;
     }
 
-    sessionCountRef.current[mem.id] = (sessionCountRef.current[mem.id] || 0) + 1;
     workingRef.current[mem.id] = false;
     setWorking(prev => ({ ...prev, [mem.id]: false }));
   }
