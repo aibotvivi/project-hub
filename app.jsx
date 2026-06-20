@@ -906,6 +906,7 @@ function App() {
   const extraRef = useRef(extra);
   const autoThreadsRef = useRef(autoThreads);
   const hydratedRef = useRef(false);
+  const streamingRef = useRef(false);
 
   function selectProject(id) {
     const p = allProjects.find((x) => x.id === id);
@@ -1179,6 +1180,7 @@ BODY: <2-4 sentences of your update, OR your specific question to the founder>`;
   useEffect(() => { justShipItRef.current = justShipIt; }, [justShipIt]);
   useEffect(() => { extraRef.current = extra; }, [extra]);
   useEffect(() => { autoThreadsRef.current = autoThreads; }, [autoThreads]);
+  useEffect(() => { streamingRef.current = streaming; }, [streaming]);
 
   useEffect(() => {
     if (!project.goals) return;
@@ -1187,15 +1189,18 @@ BODY: <2-4 sentences of your update, OR your specific question to the founder>`;
     if (!nonDirectors.length) return;
     let cancelled = false;
     async function tick() {
+      // Don't compete with the founder's own message for the Claude subscription.
+      if (streamingRef.current) return;
       for (const mem of nonDirectors) {
         if (cancelled || projectRef.current.id !== proj.id) break;
+        if (streamingRef.current) break;
         if ((sessionCountRef.current[mem.id] || 0) >= 2) continue;
         if (workingRef.current[mem.id]) continue;
         await doAutoUpdate(mem, projectRef.current);
       }
     }
-    const t1 = setTimeout(tick, 9000);
-    const iv = setInterval(tick, 90000);
+    const t1 = setTimeout(tick, 12000);
+    const iv = setInterval(tick, 120000);
     return () => { cancelled = true; clearTimeout(t1); clearInterval(iv); };
   }, [projectId]);
 

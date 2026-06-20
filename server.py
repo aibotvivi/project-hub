@@ -2,7 +2,7 @@
 """Project Hub server — static files + /api/chats + /api/chat (Claude Code proxy)."""
 
 import json, os, subprocess, threading, urllib.request, urllib.error
-from http.server import HTTPServer, SimpleHTTPRequestHandler
+from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 
 ROOT       = os.path.dirname(os.path.abspath(__file__))
 CHATS_FILE   = os.path.join(ROOT, "chats.json")
@@ -207,24 +207,28 @@ class Handler(SimpleHTTPRequestHandler):
         if history_parts:
             full_system += "\n\nConversation so far:\n" + "\n\n".join(history_parts)
 
+        # --tools "" and --setting-sources "" skip the agent tool-loop and project
+        # context (CLAUDE.md/skills/MCP), roughly halving latency for plain text gen.
         cmd = [
             CLAUDE_BIN,
             "-p", user_msg,
             "--system-prompt", full_system,
+            "--tools", "",
+            "--setting-sources", "",
             "--output-format", "json",
             "--model", "claude-sonnet-4-6",
         ]
 
         try:
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=90
+                cmd, capture_output=True, text=True, timeout=180
             )
             output = json.loads(result.stdout)
             text   = output.get("result", "").strip()
             if not text:
                 text = result.stderr.strip() or "No response from Claude Code."
         except subprocess.TimeoutExpired:
-            text = "⚠️ Response timed out (90s). Try a shorter message."
+            text = "⚠️ Response timed out (180s). Try a shorter message or simpler request."
         except Exception as e:
             text = f"⚠️ Error calling Claude Code: {e}"
 
@@ -250,6 +254,7 @@ class Handler(SimpleHTTPRequestHandler):
 
 if __name__ == "__main__":
     os.chdir(ROOT)
-    httpd = HTTPServer(("0.0.0.0", 8082), Handler)
+    # Threaded so background auto-updates don't block the founder's chat requests.
+    httpd = ThreadingHTTPServer(("0.0.0.0", 8082), Handler)
     print("Project Hub → http://0.0.0.0:8082")
     httpd.serve_forever()
