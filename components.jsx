@@ -154,6 +154,46 @@ function copyCode(text) {
   navigator.clipboard.writeText(text).catch(() => {});
 }
 
+// Shared cache of which cross-check models the server has keys for
+let _modelsCache = null;
+function useAvailableModels() {
+  const [models, setModels] = React.useState(_modelsCache || { openai: false, gemini: false });
+  React.useEffect(() => {
+    if (_modelsCache) return;
+    fetch("/api/models").then((r) => r.json()).then((m) => { _modelsCache = m; setModels(m); }).catch(() => {});
+  }, []);
+  return models;
+}
+
+// ── Persisted cross-check reviews (keyed by content hash, synced to server) ──
+function hashStr(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) { h = (h * 31 + s.charCodeAt(i)) | 0; }
+  return Math.abs(h).toString(36);
+}
+let _reviewsCache = null;
+let _reviewsLoad = null;
+function loadReviews() {
+  if (_reviewsCache) return Promise.resolve(_reviewsCache);
+  if (_reviewsLoad) return _reviewsLoad;
+  let local = {};
+  try { local = JSON.parse(localStorage.getItem("hub_reviews") || "{}"); } catch {}
+  _reviewsLoad = fetch("/api/reviews")
+    .then((r) => r.json())
+    .then((server) => { _reviewsCache = { ...local, ...server }; return _reviewsCache; })
+    .catch(() => { _reviewsCache = local; return _reviewsCache; });
+  return _reviewsLoad;
+}
+function saveReview(key, entry) {
+  _reviewsCache = { ...(_reviewsCache || {}), [key]: entry };
+  localStorage.setItem("hub_reviews", JSON.stringify(_reviewsCache));
+  fetch("/api/reviews", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(_reviewsCache),
+  }).catch(() => {});
+}
+
 function renderMsgText(text, streaming) {
   const raw = text || "";
   const parts = [];
@@ -198,16 +238,141 @@ function PreviewModal({ code, onClose }) {
   );
 }
 
+const CROSS_LABELS = { openai: "ChatGPT", gemini: "Gemini" };
+function CrossCheckPanel({ content, context }) {
+  const models = useAvailableModels();
+  const [running, setRunning] = React.useState(null);   // model id currently running
+  const [results, setResults] = React.useState({});     // { [model]: { text, ts } }
+  const [errors, setErrors] = React.useState({});       // { [model]: { msg, needsKey } }
+  const keyOf = (model) => hashStr(content) + "-" + model;
+
+  // Load any previously-saved reviews for this exact content
+  React.useEffect(() => {
+    let alive = true;
+    loadReviews().then((all) => {
+      if (!alive) return;
+      const found = {};
+      ["openai", "gemini"].forEach((m) => { if (all[keyOf(m)]) found[m] = all[keyOf(m)]; });
+      if (Object.keys(found).length) setResults((r) => ({ ...found, ...r }));
+    });
+    return () => { alive = false; };
+  }, [content]);
+
+  async function review(model) {
+    setRunning(model);
+    setErrors((e) => ({ ...e, [model]: null }));
+    try {
+      const res = await fetch("/api/review", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model, content, context }),
+      });
+      const data = await res.json();
+      if (data.text) {
+        const entry = { text: data.text, ts: Date.now() };
+        setResults((r) => ({ ...r, [model]: entry }));
+        saveReview(keyOf(model), entry);
+      } else {
+        setErrors((e) => ({ ...e, [model]: { msg: data.error || "Review failed.", needsKey: !!data.needsKey } }));
+      }
+    } catch {
+      setErrors((e) => ({ ...e, [model]: { msg: "Couldn't reach the server.", needsKey: false } }));
+    } finally {
+      setRunning(null);
+    }
+  }
+
+  return (
+    <div className="crosscheck">
+      <div className="crosscheck-head">
+        <span className="crosscheck-label">Cross-check with another model</span>
+        <div className="crosscheck-btns">
+          {["openai", "gemini"].map((m) => {
+            const has = !!results[m];
+            return (
+              <button key={m} className="crosscheck-btn"
+                disabled={running !== null || (!models[m] && _modelsCache)}
+                onClick={() => review(m)}>
+                {running === m ? "Reviewing…" : (has ? "Re-run " + CROSS_LABELS[m] : CROSS_LABELS[m])}
+                {_modelsCache && !models[m] && " (no key)"}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      {["openai", "gemini"].map((m) => results[m] && (
+        <div className="crosscheck-result" key={m}>
+          <span className="crosscheck-result-by">{CROSS_LABELS[m]}'s review · saved</span>
+          <div className="crosscheck-result-body">{renderMsgText(results[m].text, false)}</div>
+        </div>
+      ))}
+      {["openai", "gemini"].map((m) => errors[m] && (
+        <div className="crosscheck-error" key={m}>
+          {errors[m].msg}
+          {errors[m].needsKey && (
+            <div className="crosscheck-hint">
+              Set the key in your terminal before launching the server, e.g.{" "}
+              <code>{m === "gemini" ? "export GEMINI_API_KEY=…" : "export OPENAI_API_KEY=…"}</code>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function CodeBlock({ lang, code }) {
   const [copied, setCopied] = React.useState(false);
   const [previewing, setPreviewing] = React.useState(false);
+  const [publishState, setPublishState] = React.useState("idle"); // idle | publishing | done | error
+  const [publishedUrl, setPublishedUrl] = React.useState("");
+  const [linkCopied, setLinkCopied] = React.useState(false);
+  const [crossOpen, setCrossOpen] = React.useState(false);
+  const [hasReview, setHasReview] = React.useState(false);
   const isPreviewable = lang === "html" || (!lang && /<(!DOCTYPE|html)/i.test(code));
+
+  React.useEffect(() => {
+    let alive = true;
+    loadReviews().then((all) => {
+      if (!alive) return;
+      const k = hashStr(code);
+      if (all[k + "-openai"] || all[k + "-gemini"]) setHasReview(true);
+    });
+    return () => { alive = false; };
+  }, [code]);
 
   function doCopy() {
     navigator.clipboard.writeText(code).catch(() => {});
     setCopied(true);
     setTimeout(() => setCopied(false), 1800);
   }
+
+  async function doPublish() {
+    setPublishState("publishing");
+    try {
+      const res = await fetch("/api/publish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, id: "app" }),
+      });
+      const data = await res.json();
+      if (data.path) {
+        setPublishedUrl(window.location.origin + data.path);
+        setPublishState("done");
+      } else {
+        setPublishState("error");
+      }
+    } catch {
+      setPublishState("error");
+    }
+  }
+
+  function copyLink() {
+    navigator.clipboard.writeText(publishedUrl).catch(() => {});
+    setLinkCopied(true);
+    setTimeout(() => setLinkCopied(false), 1800);
+  }
+
   return (
     <>
       <div className="msg-code">
@@ -217,33 +382,76 @@ function CodeBlock({ lang, code }) {
             {isPreviewable && (
               <button className="msg-code-preview" onClick={() => setPreviewing(true)}>Preview ▶</button>
             )}
+            {isPreviewable && (
+              <button className="msg-code-publish" onClick={doPublish} disabled={publishState === "publishing"}>
+                {publishState === "publishing" ? "Publishing…" : publishState === "done" ? "Published ✓" : "Publish ↗"}
+              </button>
+            )}
+            <button className={"msg-code-cross" + (crossOpen ? " is-open" : "")} onClick={() => setCrossOpen((o) => !o)}>
+              Cross-check ⚖{hasReview && <span className="msg-code-cross-badge">✓</span>}
+            </button>
             <button className="msg-code-copy" onClick={doCopy}>{copied ? "Copied ✓" : "Copy"}</button>
           </div>
         </div>
         <pre className="msg-code-pre"><code>{code}</code></pre>
+        {crossOpen && <CrossCheckPanel content={code} context={"This is " + (lang || "code") + " produced by an AI team member."} />}
+        {publishState === "done" && (
+          <div className="msg-code-published">
+            <span className="msg-code-published-label">Live link</span>
+            <a className="msg-code-published-url" href={publishedUrl} target="_blank" rel="noreferrer">{publishedUrl}</a>
+            <button className="msg-code-published-copy" onClick={copyLink}>{linkCopied ? "Copied ✓" : "Copy link"}</button>
+          </div>
+        )}
+        {publishState === "error" && (
+          <div className="msg-code-published msg-code-published-error">Couldn't publish — is the local server running?</div>
+        )}
       </div>
       {previewing && <PreviewModal code={code} onClose={() => setPreviewing(false)} />}
     </>
   );
 }
 
-function dateLabel(timeStr) {
-  const t = timeStr || "";
+function dateLabel(m) {
+  if (m && typeof m === "object" && m.ts) {
+    const d = new Date(m.ts);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const yest = new Date(today); yest.setDate(yest.getDate() - 1);
+    const dd = new Date(d); dd.setHours(0, 0, 0, 0);
+    if (dd.getTime() === today.getTime()) return "Today";
+    if (dd.getTime() === yest.getTime()) return "Yesterday";
+    return d.toLocaleDateString([], { month: "short", day: "numeric" });
+  }
+  const t = (m && typeof m === "object" ? m.time : m) || "";
   if (/^today/i.test(t))     return "Today";
   if (/^yesterday/i.test(t)) return "Yesterday";
-  const m = t.match(/^([A-Za-z]+ \d+)/);
-  return m ? m[1] : "Earlier";
+  const mm = t.match(/^([A-Za-z]+ \d+)/);
+  return mm ? mm[1] : "Earlier";
 }
 
 function groupByDate(messages) {
   const groups = [];
   const idx = {};
   messages.forEach(m => {
-    const label = dateLabel(m.time);
+    const label = dateLabel(m);
     if (idx[label] === undefined) { idx[label] = groups.length; groups.push({ label, msgs: [] }); }
     groups[idx[label]].msgs.push(m);
   });
   return groups;
+}
+
+const THINKING_PHASES = ["Thinking", "Working on it", "Drafting a response", "Almost there"];
+function ThinkingIndicator({ name }) {
+  const [phase, setPhase] = React.useState(0);
+  React.useEffect(() => {
+    const iv = setInterval(() => setPhase((p) => Math.min(p + 1, THINKING_PHASES.length - 1)), 4000);
+    return () => clearInterval(iv);
+  }, []);
+  return (
+    <div className="thinking">
+      <span className="thinking-dots"><span /><span /><span /></span>
+      <span className="thinking-label">{name ? name + " is " + THINKING_PHASES[phase].toLowerCase() : THINKING_PHASES[phase]}…</span>
+    </div>
+  );
 }
 
 function ThreadMessages({ messages, member }) {
@@ -284,7 +492,11 @@ function ThreadMessages({ messages, member }) {
                 : <span className="msg-you">You</span>}
               <span className="msg-time">{m.time}</span>
             </div>
-            <div className="msg-text">{renderMsgText(m.text, m.streaming)}</div>
+            <div className="msg-text">
+              {m.streaming && !m.text
+                ? <ThinkingIndicator name={m.from === "member" ? member.name : null} />
+                : renderMsgText(m.text, m.streaming)}
+            </div>
           </div>
         ))}
       </div>
@@ -292,25 +504,35 @@ function ThreadMessages({ messages, member }) {
   );
 }
 
-function ThreadCard({ thread, member, project, focused, onFocus }) {
-  const t = window.HUB_DATA.types[thread.type];
+function ThreadCard({ thread, member, project, focused, onFocus, onDecide, onAnswer }) {
+  const t = window.HUB_DATA.types[thread.type] || window.HUB_DATA.types.status;
+  const isQuestion = thread.type === "question";
+  const hasReply = thread.messages && thread.messages.some(m => m.from === "founder");
   return (
     <article
-      className={"card" + (focused ? " card-focused" : "")}
+      className={"card" + (focused ? " card-focused" : "") + (isQuestion ? " card-question" : "")}
       style={{ "--accent-hue": t.hue }}
       onClick={onFocus}
     >
       <div className="card-rail" />
       <header className="card-head">
         <div className="card-type">
-          <TypeDot type={thread.type} />
-          <span className="card-type-label">{t.label}</span>
+          {isQuestion
+            ? <span className="question-mark">?</span>
+            : <TypeDot type={thread.type} />}
+          <span className="card-type-label">{isQuestion ? "Needs your input" : t.label}</span>
         </div>
         <span className="card-time">{thread.time}</span>
       </header>
       <h3 className="card-title">{thread.title}</h3>
       <StructuredBody type={thread.type} body={thread.body} />
       <ThreadMessages messages={thread.messages} member={member} />
+      {isQuestion && !hasReply && (
+        <div className="question-actions" onClick={(e) => e.stopPropagation()}>
+          <button className="question-btn-answer" onClick={onAnswer}>Answer</button>
+          <button className="question-btn-decide" onClick={onDecide}>Decide for me</button>
+        </div>
+      )}
       <footer className="card-foot">
         <span className="card-project">
           <span className="card-project-dot" style={{ background: project.color }} />
@@ -318,7 +540,7 @@ function ThreadCard({ thread, member, project, focused, onFocus }) {
         </span>
         {focused
           ? <span className="card-replying">Replying here →</span>
-          : <span className="card-reply-hint">Click to reply in this thread</span>}
+          : <span className="card-reply-hint">{isQuestion && !hasReply ? "Type your answer below" : "Click to reply in this thread"}</span>}
       </footer>
     </article>
   );

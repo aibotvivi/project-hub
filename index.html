@@ -274,6 +274,25 @@ button { font-family: inherit; cursor: pointer; }
 .caret { display: inline-block; width: 2px; height: 1em; background: var(--ink-2); margin-left: 2px; vertical-align: text-bottom; animation: blink 1s step-end infinite; }
 @keyframes blink { 50% { opacity: 0; } }
 
+/* thinking / working indicator while a member generates */
+.thinking { display: inline-flex; align-items: center; gap: 9px; padding: 3px 0; }
+.thinking-dots { display: inline-flex; align-items: center; gap: 4px; }
+.thinking-dots span {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--ink-3);
+  animation: thinking-bounce 1.3s ease-in-out infinite;
+}
+.thinking-dots span:nth-child(2) { animation-delay: 0.18s; }
+.thinking-dots span:nth-child(3) { animation-delay: 0.36s; }
+@keyframes thinking-bounce {
+  0%, 80%, 100% { transform: translateY(0); opacity: 0.45; }
+  40%           { transform: translateY(-4px); opacity: 1; }
+}
+.thinking-label {
+  font-size: 12.5px; color: var(--ink-2); font-style: italic;
+  animation: thinking-fade 2s ease-in-out infinite;
+}
+@keyframes thinking-fade { 50% { opacity: 0.6; } }
+
 /* msg date tabs */
 .msg-tabs {
   display: flex; gap: 5px; flex-wrap: wrap;
@@ -589,6 +608,84 @@ button { font-family: inherit; cursor: pointer; }
 }
 .msg-code-preview:hover { background: oklch(0.88 0.09 260); }
 
+/* publish button + live link */
+.msg-code-publish {
+  font-size: 10.5px; font-weight: 600; color: oklch(0.4 0.15 145);
+  background: oklch(0.94 0.06 145); border: 1px solid oklch(0.84 0.1 145);
+  border-radius: 5px; padding: 2px 8px; cursor: pointer; font-family: var(--mono);
+  transition: background .1s;
+}
+.msg-code-publish:hover:not(:disabled) { background: oklch(0.88 0.1 145); }
+.msg-code-publish:disabled { opacity: 0.6; cursor: default; }
+.msg-code-published {
+  display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
+  padding: 9px 12px; border-top: 1px solid oklch(0.88 0.06 145);
+  background: oklch(0.97 0.025 145);
+}
+.msg-code-published-label {
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  color: oklch(0.45 0.13 145); flex: none;
+}
+.msg-code-published-url {
+  flex: 1; min-width: 0; font-family: var(--mono); font-size: 11.5px;
+  color: oklch(0.42 0.12 230); text-decoration: none; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.msg-code-published-url:hover { text-decoration: underline; }
+.msg-code-published-copy {
+  flex: none; font-size: 10.5px; font-weight: 600; font-family: var(--mono);
+  color: var(--ink-2); background: var(--surface); border: 1px solid var(--line);
+  border-radius: 5px; padding: 3px 9px; cursor: pointer; transition: background .1s;
+}
+.msg-code-published-copy:hover { background: var(--surface-2); color: var(--ink); }
+.msg-code-published-error { color: oklch(0.5 0.16 25); font-size: 12px; background: oklch(0.97 0.03 25); border-top-color: oklch(0.88 0.07 25); }
+
+/* cross-check button + panel */
+.msg-code-cross {
+  font-size: 10.5px; font-weight: 600; color: oklch(0.42 0.13 300);
+  background: oklch(0.95 0.05 300); border: 1px solid oklch(0.85 0.09 300);
+  border-radius: 5px; padding: 2px 8px; cursor: pointer; font-family: var(--mono);
+  transition: background .1s;
+}
+.msg-code-cross:hover { background: oklch(0.89 0.08 300); }
+.msg-code-cross.is-open { background: oklch(0.85 0.1 300); }
+.msg-code-cross-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  margin-left: 4px; width: 12px; height: 12px; border-radius: 50%;
+  background: oklch(0.55 0.18 145); color: #fff; font-size: 8px; font-weight: 700;
+}
+.crosscheck {
+  border-top: 1px solid oklch(0.88 0.05 300); background: oklch(0.985 0.012 300);
+  padding: 11px 12px; display: flex; flex-direction: column; gap: 10px;
+}
+.crosscheck-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.crosscheck-label { font-size: 11px; font-weight: 600; color: oklch(0.45 0.1 300); }
+.crosscheck-btns { display: flex; gap: 6px; }
+.crosscheck-btn {
+  font-size: 11px; font-weight: 600; font-family: inherit;
+  color: oklch(0.38 0.12 300); background: var(--surface); border: 1px solid oklch(0.84 0.08 300);
+  border-radius: 6px; padding: 4px 11px; cursor: pointer; transition: background .1s, opacity .1s;
+}
+.crosscheck-btn:hover:not(:disabled) { background: oklch(0.95 0.04 300); }
+.crosscheck-btn:disabled { opacity: 0.45; cursor: default; }
+.crosscheck-result {
+  background: var(--surface); border: 1px solid oklch(0.9 0.03 300);
+  border-radius: 8px; padding: 11px 13px;
+}
+.crosscheck-result-by {
+  display: block; font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  color: oklch(0.5 0.12 300); margin-bottom: 7px;
+}
+.crosscheck-result-body { font-size: 13px; color: var(--ink); line-height: 1.55; }
+.crosscheck-result-body p:first-child { margin-top: 0; }
+.crosscheck-result-body p:last-child { margin-bottom: 0; }
+.crosscheck-error { font-size: 12px; color: oklch(0.48 0.14 25); }
+.crosscheck-hint { margin-top: 6px; font-size: 11px; color: var(--ink-2); }
+.crosscheck-hint code {
+  font-family: var(--mono); font-size: 10.5px; background: var(--surface-2);
+  padding: 1px 5px; border-radius: 4px; border: 1px solid var(--line-2);
+}
+
 /* ── MEMBER BACKGROUND FIELDS ── */
 .np-member-row-top { display: flex; align-items: center; gap: 10px; width: 100%; }
 .np-member-row.is-expanded { flex-direction: column; align-items: stretch; gap: 10px; }
@@ -713,6 +810,61 @@ button { font-family: inherit; cursor: pointer; }
 }
 .tweak-clear-key:hover { background: oklch(0.97 0.02 25); color: oklch(0.45 0.13 25); border-color: oklch(0.85 0.06 25); }
 
+/* ── JUST SHIP IT TOGGLE ── */
+.just-ship-toggle {
+  display: inline-flex; align-items: center; gap: 6px; flex: none;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.03em;
+  color: var(--ink-2); background: var(--surface-2);
+  border: 1px solid var(--line); border-radius: 99px;
+  padding: 3px 10px 3px 7px; cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.just-ship-toggle:hover { background: oklch(0.94 0.01 75); }
+.just-ship-toggle.is-on {
+  color: oklch(0.38 0.16 145);
+  background: oklch(0.94 0.05 145);
+  border-color: oklch(0.86 0.09 145);
+}
+.just-ship-dot {
+  width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+  background: var(--ink-3); transition: background .15s;
+}
+.just-ship-toggle.is-on .just-ship-dot {
+  background: oklch(0.55 0.2 145);
+  animation: pulse-dot 1.4s ease-in-out infinite;
+}
+
+/* ── QUESTION CARDS ── */
+.card-question { --accent-hue: 38; }
+.card-question .card-rail { background: oklch(0.72 0.15 38); }
+.card-question { border-color: oklch(0.88 0.08 38); background: oklch(0.995 0.008 38); }
+.card-question .card-head { border-bottom-color: oklch(0.92 0.05 38); }
+.question-mark {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0;
+  font-size: 9px; font-weight: 700;
+  background: oklch(0.75 0.16 38); color: #fff;
+}
+.question-actions {
+  display: flex; gap: 8px; margin-top: 10px; padding-top: 10px;
+  border-top: 1px solid oklch(0.91 0.06 38);
+}
+.question-btn-answer {
+  flex: 1; padding: 8px 12px; border-radius: 8px; border: none;
+  background: oklch(0.32 0.014 60); color: oklch(0.97 0.004 75);
+  font-family: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
+  transition: background .12s;
+}
+.question-btn-answer:hover { background: oklch(0.26 0.014 60); }
+.question-btn-decide {
+  flex: 1; padding: 8px 12px; border-radius: 8px;
+  border: 1px solid oklch(0.87 0.08 38);
+  background: oklch(0.97 0.04 38); color: oklch(0.42 0.14 38);
+  font-family: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
+  transition: background .12s, border-color .12s;
+}
+.question-btn-decide:hover { background: oklch(0.93 0.06 38); border-color: oklch(0.82 0.1 38); }
+
 /* ── BACKGROUND WORKER STATES ── */
 @keyframes pulse-dot {
   0%, 100% { opacity: 1; transform: scale(1); }
@@ -773,9 +925,9 @@ button { font-family: inherit; cursor: pointer; }
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
 
-<script src="data.jsx?v=28"></script>
-<script type="text/babel" src="tweaks-panel.jsx?v=28"></script>
-<script type="text/babel" src="components.jsx?v=28"></script>
-<script type="text/babel" src="app.jsx?v=28"></script>
+<script src="data.jsx?v=37"></script>
+<script type="text/babel" src="tweaks-panel.jsx?v=37"></script>
+<script type="text/babel" src="components.jsx?v=37"></script>
+<script type="text/babel" src="app.jsx?v=37"></script>
 </body>
 </html>

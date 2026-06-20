@@ -20,6 +20,17 @@ function formatMsgTime() {
 }
 function setMode(m) { localStorage.setItem("hub_mode", m); }
 
+// Absolute-timestamp date labelling — reliable across days (unlike frozen strings)
+function labelFromTs(ts) {
+  const d = new Date(ts);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const yest = new Date(today); yest.setDate(yest.getDate() - 1);
+  const dd = new Date(d); dd.setHours(0, 0, 0, 0);
+  if (dd.getTime() === today.getTime()) return "Today";
+  if (dd.getTime() === yest.getTime()) return "Yesterday";
+  return d.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
 // ── Anthropic API ─────────────────────────────────────────────────────────
 function getStoredKey() { return localStorage.getItem("hub_api_key") || ""; }
 function getStoredChats() {
@@ -41,6 +52,22 @@ async function pushServerChats(chats) {
     });
   } catch {}
 }
+async function fetchServerState() {
+  try {
+    const res = await fetch("/api/state");
+    if (!res.ok) return null;
+    return await res.json();
+  } catch { return null; }
+}
+async function pushServerState(state) {
+  try {
+    await fetch("/api/state", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(state),
+    });
+  } catch {}
+}
 
 // ── User project storage ──────────────────────────────────────────────────
 function getStoredProjects() {
@@ -49,6 +76,11 @@ function getStoredProjects() {
 function saveStoredProjects(projects) {
   localStorage.setItem("hub_projects", JSON.stringify(projects));
 }
+function getStoredShipMode() {
+  try { return JSON.parse(localStorage.getItem("hub_ship_mode") || "{}"); } catch { return {}; }
+}
+function saveShipMode(data) { localStorage.setItem("hub_ship_mode", JSON.stringify(data)); }
+
 function getStoredAutoThreads() {
   try { return JSON.parse(localStorage.getItem("hub_auto_threads") || "{}"); } catch { return {}; }
 }
@@ -256,6 +288,27 @@ Your job is to produce real outputs from your area of expertise — not just adv
   return base;
 }
 
+// ── Shared team memory ────────────────────────────────────────────────────
+// Digest of what every OTHER member is working on, so each member coordinates.
+function buildTeamDigest(project, currentMemberId, autoThreads, extra) {
+  const parts = [];
+  project.members.forEach((mem) => {
+    if (mem.id === currentMemberId || mem.director) return;
+    const threads = [...mem.threads, ...((autoThreads && autoThreads[mem.id]) || [])];
+    if (!threads.length) return;
+    const recent = threads.slice(-3);
+    const lines = recent.map((th) => {
+      const allMsgs = [...(th.messages || []), ...((extra && extra[th.id]) || [])];
+      const last = allMsgs.filter((m) => m.from === "member" && m.text).slice(-1)[0];
+      const snippet = last ? last.text.replace(/\s+/g, " ").slice(0, 220) : "";
+      return `  • [${th.type}] ${th.title}${snippet ? ": " + snippet : ""}`;
+    });
+    parts.push(`${mem.name} (${mem.role}):\n${lines.join("\n")}`);
+  });
+  if (!parts.length) return "";
+  return `\n\n--- WHAT THE REST OF THE TEAM IS WORKING ON ---\n${parts.join("\n\n")}\n--- END TEAM CONTEXT ---\n\nStay consistent with your teammates above and avoid contradicting their work. Reference it when relevant.`;
+}
+
 function buildThreadContext(thread) {
   if (!thread) return "";
   const lines = [`Thread: "${thread.title}" (type: ${thread.type})`];
@@ -268,8 +321,8 @@ function buildThreadContext(thread) {
 }
 
 // ── Streaming reply ───────────────────────────────────────────────────────
-async function streamReply({ tid, member, project, focused, founderText, priorMessages, setExtra }) {
-  const systemPrompt = getSystemPrompt(member, project);
+async function streamReply({ tid, member, project, focused, founderText, priorMessages, setExtra, teamDigest }) {
+  const systemPrompt = getSystemPrompt(member, project) + (teamDigest || "");
   const threadCtx = buildThreadContext(focused);
 
   // Build message history from prior thread messages (excluding streaming placeholders)
@@ -291,7 +344,7 @@ async function streamReply({ tid, member, project, focused, founderText, priorMe
   const repliedAt = formatMsgTime();
   setExtra((prev) => ({
     ...prev,
-    [tid]: [...(prev[tid] || []), { from: "member", text: "", time: repliedAt, streaming: true }],
+    [tid]: [...(prev[tid] || []), { from: "member", text: "", time: repliedAt, ts: Date.now(), streaming: true }],
   }));
 
   let accumulated = "";
@@ -520,14 +573,17 @@ function NewProjectModal({ onDone, onClose }) {
   function launch() {
     const stamp = () => `Today, ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
     const goalsNote = goals.trim() ? `\n\nYour project goals: "${goals.trim()}"` : "";
-    const seed = (m, opening) => ({
-      ...m, threads: [{
-        id: "th_" + uid(), type: m.types[0] || "status",
-        title: "Project kickoff — get started here",
-        time: stamp(), body: {},
-        messages: [{ from: "member", text: opening + goalsNote, time: stamp() }],
-      }],
-    });
+    const seed = (m, opening) => {
+      const now = Date.now();
+      return {
+        ...m, threads: [{
+          id: "th_" + uid(), type: m.types[0] || "status",
+          title: "Project kickoff — get started here",
+          time: stamp(), ts: now, body: {},
+          messages: [{ from: "member", text: opening + goalsNote, time: stamp(), ts: now }],
+        }],
+      };
+    };
     const director = seed({
       id: "dir_" + uid(), name: "Director", role: "Creative Director",
       short: "DIR", desc: "Synthesis across the whole team",
@@ -840,10 +896,16 @@ function App() {
   const [webhooks, setWebhooks] = useState(getWebhooks);
   const [autoThreads, setAutoThreads] = useState(getStoredAutoThreads);
   const [working, setWorking] = useState({});
+  const [shipMode, setShipMode] = useState(getStoredShipMode);
+  const justShipIt = !!shipMode[projectId];
   const feedRef = useRef(null);
   const workingRef = useRef({});
   const sessionCountRef = useRef({});
   const projectRef = useRef(project);
+  const justShipItRef = useRef(justShipIt);
+  const extraRef = useRef(extra);
+  const autoThreadsRef = useRef(autoThreads);
+  const hydratedRef = useRef(false);
 
   function selectProject(id) {
     const p = allProjects.find((x) => x.id === id);
@@ -871,8 +933,13 @@ function App() {
     return [...mem.threads, ...(autoThreads[mem.id] || [])];
   }
 
-  function threadDateLabel(timeStr) {
-    const t = timeStr || "";
+  function teamDigestFor(mem, proj) {
+    return buildTeamDigest(proj || project, mem.id, autoThreadsRef.current, extraRef.current);
+  }
+
+  function threadDateLabel(th) {
+    if (th && typeof th === "object" && th.ts) return labelFromTs(th.ts);
+    const t = (th && typeof th === "object" ? th.time : th) || "";
     if (/^today/i.test(t))     return "Today";
     if (/^yesterday/i.test(t)) return "Yesterday";
     const m = t.match(/^([A-Za-z]+ \d+)/);
@@ -883,7 +950,7 @@ function App() {
     const seen = new Map();
     project.members.forEach(mem => {
       getMemberThreads(mem).forEach(th => {
-        const label = threadDateLabel(th.time);
+        const label = threadDateLabel(th);
         if (!seen.has(label)) seen.set(label, seen.size);
       });
     });
@@ -899,7 +966,7 @@ function App() {
 
   const filtered = useMemo(() => {
     return getMemberThreads(member).filter((th) => {
-      if (activeDateFilter && threadDateLabel(th.time) !== activeDateFilter) return false;
+      if (activeDateFilter && threadDateLabel(th) !== activeDateFilter) return false;
       return true;
     });
   }, [member, activeDateFilter, autoThreads]);
@@ -920,6 +987,37 @@ function App() {
     setWebhooks(getWebhooks());
   }
 
+  function toggleShipMode() {
+    setShipMode(prev => {
+      const next = { ...prev, [projectId]: !prev[projectId] };
+      saveShipMode(next);
+      return next;
+    });
+  }
+
+  async function decideForMe(thread) {
+    if (streaming) return;
+    const tid = thread.id;
+    const founderText = "Decide for yourself and proceed with your best judgment.";
+    const sentAt = formatMsgTime();
+    setExtra(prev => ({
+      ...prev,
+      [tid]: [...(prev[tid] || []), { from: "founder", text: founderText, time: sentAt, ts: Date.now() }],
+    }));
+    setStreaming(true);
+    try {
+      await streamReply({
+        tid, member, project, focused: thread,
+        founderText,
+        priorMessages: [...thread.messages, ...(extra[tid] || [])],
+        setExtra,
+        teamDigest: teamDigestFor(member),
+      });
+    } finally {
+      setStreaming(false);
+    }
+  }
+
   async function doAutoUpdate(mem, proj) {
     if (!proj || !proj.goals) return;
     if (workingRef.current[mem.id]) return;
@@ -927,13 +1025,21 @@ function App() {
     setWorking(prev => ({ ...prev, [mem.id]: true }));
     workingRef.current[mem.id] = true;
 
-    const systemPrompt = getSystemPrompt(mem, proj);
-    const prompt = `Proactively generate a brief update or insight for the founder based on the project goals.
+    const systemPrompt = getSystemPrompt(mem, proj) + teamDigestFor(mem, proj);
+    const autoShip = justShipItRef.current;
+    const prompt = autoShip
+      ? `Proactively generate an update based on the project goals. If you would normally ask a clarifying question, instead state your assumption and proceed.
 
 Reply in EXACTLY this format (no text before or after):
 TITLE: <one-line thread title>
 TYPE: <status or proposal or learning>
-BODY: <2-4 sentences of your actual update, progress note, or recommendation>`;
+BODY: <2-4 sentences — include any assumptions you're making>`
+      : `Proactively generate either an update OR a question you need answered before you can proceed.
+
+Reply in EXACTLY this format (no text before or after):
+TITLE: <one-line thread title>
+TYPE: <status or proposal or learning or question>
+BODY: <2-4 sentences of your update, OR your specific question to the founder>`;
 
     let text = "";
     await callClaude({
@@ -954,10 +1060,11 @@ BODY: <2-4 sentences of your actual update, progress note, or recommendation>`;
 
     if (body) {
       const stamp = formatMsgTime();
+      const now = Date.now();
       const newThread = {
         id: "ath_" + uid(), type, title,
-        time: stamp, body: {}, auto: true,
-        messages: [{ from: "member", text: body, time: stamp }],
+        time: stamp, ts: now, body: {}, auto: true,
+        messages: [{ from: "member", text: body, time: stamp, ts: now }],
       };
       setAutoThreads(prev => {
         const next = { ...prev, [mem.id]: [...(prev[mem.id] || []), newThread] };
@@ -991,7 +1098,7 @@ BODY: <2-4 sentences of your actual update, progress note, or recommendation>`;
     const sentAt = formatMsgTime();
     setExtra((prev) => ({
       ...prev,
-      [tid]: [...(prev[tid] || []), { from: "founder", text, time: sentAt }],
+      [tid]: [...(prev[tid] || []), { from: "founder", text, time: sentAt, ts: Date.now() }],
     }));
     setInput("");
     setStreaming(true);
@@ -1005,13 +1112,14 @@ BODY: <2-4 sentences of your actual update, progress note, or recommendation>`;
         founderText: text,
         priorMessages: [...focused.messages, ...currentMsgs],
         setExtra,
+        teamDigest: teamDigestFor(member),
       });
     } finally {
       setStreaming(false);
     }
   }
 
-  // On mount: pull latest history from server (overrides stale localStorage)
+  // On mount: pull all state from server (overrides stale localStorage)
   useEffect(() => {
     fetchServerChats().then((serverChats) => {
       if (serverChats && Object.keys(serverChats).length > 0) {
@@ -1019,9 +1127,29 @@ BODY: <2-4 sentences of your actual update, progress note, or recommendation>`;
         localStorage.setItem("hub_chats", JSON.stringify(serverChats));
       }
     });
+    fetchServerState().then((s) => {
+      if (s) {
+        if (Array.isArray(s.projects) && s.projects.length > 0) {
+          setUserProjects(s.projects);
+          localStorage.setItem("hub_projects", JSON.stringify(s.projects));
+        }
+        if (s.autoThreads && Object.keys(s.autoThreads).length > 0) {
+          setAutoThreads(s.autoThreads);
+          localStorage.setItem("hub_auto_threads", JSON.stringify(s.autoThreads));
+        }
+        if (s.shipMode && Object.keys(s.shipMode).length > 0) {
+          setShipMode(s.shipMode);
+          localStorage.setItem("hub_ship_mode", JSON.stringify(s.shipMode));
+        }
+      }
+    }).finally(() => {
+      // Only allow server pushes after the initial load settles, so an empty
+      // browser session can't overwrite server-stored projects.
+      hydratedRef.current = true;
+    });
   }, []);
 
-  // On change: save to localStorage immediately + debounced push to server
+  // On change: save chats to localStorage + debounced push to server
   useEffect(() => {
     const toSave = {};
     for (const [tid, msgs] of Object.entries(extra)) {
@@ -1029,13 +1157,28 @@ BODY: <2-4 sentences of your actual update, progress note, or recommendation>`;
       if (clean.length) toSave[tid] = clean;
     }
     localStorage.setItem("hub_chats", JSON.stringify(toSave));
+    if (!hydratedRef.current) return; // don't push until initial server load settles
     const timer = setTimeout(() => pushServerChats(toSave), 1500);
     return () => clearTimeout(timer);
   }, [extra]);
 
+  // On change: save projects/autoThreads/shipMode to localStorage + debounced push to server
+  useEffect(() => {
+    saveStoredProjects(userProjects);
+    saveAutoThreads(autoThreads);
+    saveShipMode(shipMode);
+    if (!hydratedRef.current) return; // don't push until initial server load settles
+    const state = { projects: userProjects, autoThreads, shipMode };
+    const timer = setTimeout(() => pushServerState(state), 1500);
+    return () => clearTimeout(timer);
+  }, [userProjects, autoThreads, shipMode]);
+
   useEffect(() => { if (feedRef.current) feedRef.current.scrollTop = 0; }, [memberId, projectId, tab]);
 
   useEffect(() => { projectRef.current = project; }, [project]);
+  useEffect(() => { justShipItRef.current = justShipIt; }, [justShipIt]);
+  useEffect(() => { extraRef.current = extra; }, [extra]);
+  useEffect(() => { autoThreadsRef.current = autoThreads; }, [autoThreads]);
 
   useEffect(() => {
     if (!project.goals) return;
@@ -1067,6 +1210,14 @@ BODY: <2-4 sentences of your actual update, progress note, or recommendation>`;
             <span className="brand-mark">◆</span>
             <span className="brand-name">Project&nbsp;Hub</span>
           </div>
+          <button
+            className={"just-ship-toggle" + (justShipIt ? " is-on" : "")}
+            onClick={toggleShipMode}
+            title={justShipIt ? "Autonomous — team decides independently. Click to switch." : "Collaborative — team asks questions. Click for autonomous."}
+          >
+            <span className="just-ship-dot" />
+            {justShipIt ? "Autonomous" : "Collaborative"}
+          </button>
           <ProjectSwitcher projects={allProjects} activeId={projectId} onSelect={selectProject} onNewProject={() => setShowNewProject(true)} />
         </div>
         <div className="topnav-members">
@@ -1136,7 +1287,9 @@ BODY: <2-4 sentences of your actual update, progress note, or recommendation>`;
             {threadsForCards.map((th) => (
               <ThreadCard key={th.id} thread={th} member={member} project={project}
                 focused={focused && th.id === focused.id}
-                onFocus={() => setFocusedId(th.id)} />
+                onFocus={() => setFocusedId(th.id)}
+                onDecide={() => decideForMe(th)}
+                onAnswer={() => setFocusedId(th.id)} />
             ))}
           </div>
         </div>

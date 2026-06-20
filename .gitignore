@@ -1,0 +1,7 @@
+# User data & runtime artifacts — never commit
+chats.json
+state.json
+reviews.json
+builds/
+__pycache__/
+*.pyc

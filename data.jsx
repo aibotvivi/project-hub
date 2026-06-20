@@ -9,6 +9,7 @@
     blocker:  { id: "blocker",  label: "Blocker",  plural: "Blockers",  hue: 25  },
     status:   { id: "status",   label: "Status",   plural: "Status",    hue: 182 },
     script:   { id: "script",   label: "Script",   plural: "Scripts",   hue: 150 },
+    question: { id: "question", label: "Question", plural: "Questions", hue: 38  },
   };
 
   // Convert relative strings ("2h ago", "Today", "Yesterday", "3d ago") to real timestamps
