@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 """Project Hub server — static files + /api/chats + /api/chat (Claude Code proxy)."""
 
-import json, os, subprocess, threading, urllib.request, urllib.error
+import json, os, subprocess, threading, time, urllib.request, urllib.error
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
+
+ALLOWED_MODELS = {
+    "claude-sonnet-4-6",
+    "claude-opus-4-8",
+    "claude-haiku-4-5-20251001",
+}
 
 ROOT       = os.path.dirname(os.path.abspath(__file__))
 CHATS_FILE   = os.path.join(ROOT, "chats.json")
@@ -220,6 +226,11 @@ class Handler(SimpleHTTPRequestHandler):
         if history_parts:
             full_system += "\n\nConversation so far:\n" + "\n\n".join(history_parts)
 
+        # Model is chosen client-side (Settings); validate against an allowlist.
+        model = data.get("model") or "claude-sonnet-4-6"
+        if model not in ALLOWED_MODELS:
+            model = "claude-sonnet-4-6"
+
         # Stream tokens as they generate — no hard timeout wall, and the client
         # shows the reply (and code) building live. --tools/--setting-sources ""
         # skip agent overhead for plain text generation.
@@ -232,7 +243,7 @@ class Handler(SimpleHTTPRequestHandler):
             "--output-format", "stream-json",
             "--include-partial-messages",
             "--verbose",
-            "--model", "claude-sonnet-4-6",
+            "--model", model,
         ]
 
         # Streaming NDJSON response: each line is {"d": "<delta>"} | {"done":1} | {"err": "..."}
@@ -254,6 +265,7 @@ class Handler(SimpleHTTPRequestHandler):
             killer = threading.Timer(600, proc.kill)
             killer.start()
             got_any = False
+            fail_reason = None     # captured from the stream so we can explain *why*
             while True:
                 # readline() yields each line as soon as it's newline-terminated —
                 # avoids the read-ahead batching of `for line in proc.stdout`.
@@ -267,23 +279,42 @@ class Handler(SimpleHTTPRequestHandler):
                     obj = json.loads(line)
                 except Exception:
                     continue
-                if obj.get("type") == "stream_event":
+                t = obj.get("type")
+                if t == "stream_event":
                     ev = obj.get("event", {})
                     if ev.get("type") == "content_block_delta":
                         delta = ev.get("delta", {})
                         if delta.get("type") == "text_delta" and delta.get("text"):
                             got_any = True
                             _emit({"d": delta["text"]})
-                elif obj.get("type") == "result" and not got_any:
-                    # Fallback if no deltas were streamed
-                    res = (obj.get("result") or "").strip()
-                    if res:
-                        _emit({"d": res})
+                elif t == "rate_limit_event":
+                    info = obj.get("rate_limit_info", {})
+                    if info.get("status") and info["status"] != "allowed":
+                        resets = info.get("resetsAt")
+                        when = ""
+                        if resets:
+                            mins = max(0, int((resets - time.time()) / 60))
+                            when = f" Resets in about {mins} min." if mins else " Resets shortly."
+                        fail_reason = (f"You've hit your Claude usage limit ({info.get('rateLimitType','limit')})."
+                                       + when + " Wait for the reset, switch to a smaller model in Settings, or use an API key.")
+                elif t == "result":
+                    if obj.get("is_error") or obj.get("subtype") not in (None, "success"):
+                        api_err = obj.get("api_error_status") or obj.get("subtype") or "unknown error"
+                        fail_reason = fail_reason or f"Claude returned an error: {api_err}."
+                    if not got_any:
+                        res = (obj.get("result") or "").strip()
+                        if res:
+                            _emit({"d": res})
             proc.wait()
             killer.cancel()
-            if not got_any and proc.returncode not in (0, None):
-                err = (proc.stderr.read() or "").strip()
-                _emit({"err": "⚠️ " + (err[:300] or "No response from Claude Code.")})
+            if not got_any:
+                if fail_reason is None:
+                    stderr = (proc.stderr.read() or "").strip()
+                    if proc.returncode not in (0, None):
+                        fail_reason = (stderr[:400] or f"Claude Code exited with code {proc.returncode}.")
+                    else:
+                        fail_reason = "Claude returned an empty response — try rephrasing, or a different model in Settings."
+                _emit({"err": "⚠️ " + fail_reason})
             _emit({"done": 1})
         except (BrokenPipeError, ConnectionResetError):
             pass  # client navigated away mid-stream

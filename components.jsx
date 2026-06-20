@@ -589,20 +589,37 @@ function MemberRow({ member, active, onClick }) {
   );
 }
 
+function splitGoals(text) {
+  const t = (text || "").trim();
+  if (!t) return [];
+  // Prefer explicit lines / bullet markers
+  let parts = t.split(/\n+/).map((s) => s.replace(/^[\s\-*•\d.]+/, "").trim()).filter(Boolean);
+  // Single blob → split into sentences so it still reads as points
+  if (parts.length <= 1) {
+    parts = t.split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter(Boolean);
+  }
+  return parts;
+}
+
 function ProjectGoalsBanner({ project }) {
   const [expanded, setExpanded] = React.useState(false);
   if (!project.goals) return null;
-  const short = project.goals.length > 120 ? project.goals.slice(0, 120) + "…" : project.goals;
+  const points = splitGoals(project.goals);
+  const COLLAPSED = 2;
+  const hasMore = points.length > COLLAPSED;
+  const shown = expanded ? points : points.slice(0, COLLAPSED);
   return (
     <div className={"goals-banner" + (expanded ? " is-expanded" : "")}>
       <div className="goals-banner-icon">◎</div>
       <div className="goals-banner-body">
         <span className="goals-banner-label">Project goals</span>
-        <p className="goals-banner-text">{expanded ? project.goals : short}</p>
+        <ul className="goals-banner-list">
+          {shown.map((pt, i) => <li key={i}>{pt}</li>)}
+        </ul>
       </div>
-      {project.goals.length > 120 && (
+      {hasMore && (
         <button className="goals-banner-toggle" onClick={() => setExpanded((e) => !e)}>
-          {expanded ? "Less" : "More"}
+          {expanded ? "Less" : `+${points.length - COLLAPSED} more`}
         </button>
       )}
     </div>

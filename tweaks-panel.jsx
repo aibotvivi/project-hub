@@ -13,7 +13,7 @@ const __TWEAKS_STYLE = `
     padding:10px 8px 10px 14px;cursor:move;user-select:none}
   .twk-hd b{font-size:12px;font-weight:600;letter-spacing:.01em}
   .twk-x{appearance:none;border:0;background:transparent;color:rgba(41,38,27,.55);
-    width:22px;height:22px;border-radius:6px;cursor:default;font-size:13px;line-height:1}
+    width:22px;height:22px;border-radius:6px;cursor:pointer;font-size:13px;line-height:1}
   .twk-x:hover{background:rgba(0,0,0,.06);color:#29261b}
   .twk-body{padding:2px 14px 14px;display:flex;flex-direction:column;gap:10px;
     overflow-y:auto;overflow-x:hidden;min-height:0;
@@ -27,11 +27,11 @@ const __TWEAKS_STYLE = `
   .twk-row{display:flex;flex-direction:column;gap:5px}
   .twk-row-h{flex-direction:row;align-items:center;justify-content:space-between;gap:10px}
   .twk-lbl{display:flex;justify-content:space-between;align-items:baseline;
-    color:rgba(41,38,27,.72)}
+    color:rgba(41,38,27,.86)}
   .twk-lbl>span:first-child{font-weight:500}
-  .twk-val{color:rgba(41,38,27,.5);font-variant-numeric:tabular-nums}
-  .twk-sect{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
-    color:rgba(41,38,27,.45);padding:10px 0 0}
+  .twk-val{color:rgba(41,38,27,.66);font-variant-numeric:tabular-nums}
+  .twk-sect{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+    color:rgba(41,38,27,.6);padding:10px 0 0}
   .twk-sect:first-child{padding-top:0}
   .twk-field{appearance:none;box-sizing:border-box;width:100%;min-width:0;height:26px;padding:0 8px;
     border:.5px solid rgba(0,0,0,.1);border-radius:7px;
@@ -44,9 +44,9 @@ const __TWEAKS_STYLE = `
     border-radius:999px;background:rgba(0,0,0,.12);outline:none}
   .twk-slider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;
     width:14px;height:14px;border-radius:50%;background:#fff;
-    border:.5px solid rgba(0,0,0,.12);box-shadow:0 1px 3px rgba(0,0,0,.2);cursor:default}
+    border:.5px solid rgba(0,0,0,.12);box-shadow:0 1px 3px rgba(0,0,0,.2);cursor:pointer}
   .twk-slider::-moz-range-thumb{width:14px;height:14px;border-radius:50%;
-    background:#fff;border:.5px solid rgba(0,0,0,.12);box-shadow:0 1px 3px rgba(0,0,0,.2);cursor:default}
+    background:#fff;border:.5px solid rgba(0,0,0,.12);box-shadow:0 1px 3px rgba(0,0,0,.2);cursor:pointer}
   .twk-seg{position:relative;display:flex;padding:2px;border-radius:8px;
     background:rgba(0,0,0,.06);user-select:none}
   .twk-seg-thumb{position:absolute;top:2px;bottom:2px;border-radius:6px;
@@ -55,9 +55,9 @@ const __TWEAKS_STYLE = `
   .twk-seg.dragging .twk-seg-thumb{transition:none}
   .twk-seg button{appearance:none;position:relative;z-index:1;flex:1;border:0;
     background:transparent;color:inherit;font:inherit;font-weight:500;min-height:22px;
-    border-radius:6px;cursor:default;padding:4px 6px;line-height:1.2;overflow-wrap:anywhere}
+    border-radius:6px;cursor:pointer;padding:4px 6px;line-height:1.2;overflow-wrap:anywhere}
   .twk-toggle{position:relative;width:32px;height:18px;border:0;border-radius:999px;
-    background:rgba(0,0,0,.15);transition:background .15s;cursor:default;padding:0}
+    background:rgba(0,0,0,.15);transition:background .15s;cursor:pointer;padding:0}
   .twk-toggle[data-on="1"]{background:#34c759}
   .twk-toggle i{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;
     background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .15s}
@@ -74,23 +74,23 @@ const __TWEAKS_STYLE = `
     width:36px;height:36px;border-radius:10px;border:.5px solid rgba(0,0,0,.12);
     background:rgba(250,249,247,.88);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);
     box-shadow:0 2px 8px rgba(0,0,0,.14);color:rgba(41,38,27,.7);font-size:16px;
-    display:flex;align-items:center;justify-content:center;cursor:default;
+    display:flex;align-items:center;justify-content:center;cursor:pointer;
     transition:background .12s,transform .12s}
   .twk-trigger:hover{background:rgba(250,249,247,1);transform:scale(1.08);color:rgba(41,38,27,1)}
   .twk-btn{appearance:none;height:26px;padding:0 12px;border:0;border-radius:7px;
-    background:rgba(0,0,0,.78);color:#fff;font:inherit;font-weight:500;cursor:default}
+    background:rgba(0,0,0,.78);color:#fff;font:inherit;font-weight:500;cursor:pointer}
   .twk-btn:hover{background:rgba(0,0,0,.88)}
   .twk-btn.secondary{background:rgba(0,0,0,.06);color:inherit}
   .twk-btn.secondary:hover{background:rgba(0,0,0,.1)}
   .twk-swatch{appearance:none;-webkit-appearance:none;width:56px;height:22px;
-    border:.5px solid rgba(0,0,0,.1);border-radius:6px;padding:0;cursor:default;
+    border:.5px solid rgba(0,0,0,.1);border-radius:6px;padding:0;cursor:pointer;
     background:transparent;flex-shrink:0}
   .twk-swatch::-webkit-color-swatch-wrapper{padding:0}
   .twk-swatch::-webkit-color-swatch{border:0;border-radius:5.5px}
   .twk-swatch::-moz-color-swatch{border:0;border-radius:5.5px}
   .twk-chips{display:flex;gap:6px}
   .twk-chip{position:relative;appearance:none;flex:1;min-width:0;height:46px;
-    padding:0;border:0;border-radius:6px;overflow:hidden;cursor:default;
+    padding:0;border:0;border-radius:6px;overflow:hidden;cursor:pointer;
     box-shadow:0 0 0 .5px rgba(0,0,0,.12),0 1px 2px rgba(0,0,0,.06);
     transition:transform .12s cubic-bezier(.3,.7,.4,1),box-shadow .12s}
   .twk-chip:hover{transform:translateY(-1px);box-shadow:0 0 0 .5px rgba(0,0,0,.18),0 4px 10px rgba(0,0,0,.12)}
@@ -101,6 +101,30 @@ const __TWEAKS_STYLE = `
   .twk-chip>span>i:first-child{box-shadow:none}
   .twk-chip svg{position:absolute;top:6px;left:6px;width:13px;height:13px;
     filter:drop-shadow(0 1px 1px rgba(0,0,0,.3))}
+  .twk-num-lbl{color:rgba(41,38,27,.72)}
+  .twk-num-unit{color:rgba(41,38,27,.58)}
+  /* keyboard focus visibility */
+  .twk-panel :focus-visible,.twk-trigger:focus-visible{outline:2px solid #4b7bec;outline-offset:1px;border-radius:6px}
+  .twk-panel button:focus:not(:focus-visible),.twk-panel input:focus:not(:focus-visible){outline:none}
+  /* ── DARK THEME for the settings panel ── */
+  html[data-theme="dark"] .twk-panel{background:rgba(38,36,31,.86);color:#ece8e1;
+    border-color:rgba(255,255,255,.12);box-shadow:0 1px 0 rgba(255,255,255,.06) inset,0 12px 40px rgba(0,0,0,.5)}
+  html[data-theme="dark"] .twk-trigger{background:rgba(38,36,31,.92);color:rgba(236,232,225,.82);border-color:rgba(255,255,255,.14)}
+  html[data-theme="dark"] .twk-trigger:hover{background:rgba(48,46,40,1);color:#fff}
+  html[data-theme="dark"] .twk-lbl{color:rgba(236,232,225,.9)}
+  html[data-theme="dark"] .twk-val,html[data-theme="dark"] .twk-num-unit{color:rgba(236,232,225,.62)}
+  html[data-theme="dark"] .twk-sect{color:rgba(236,232,225,.62)}
+  html[data-theme="dark"] .twk-num-lbl{color:rgba(236,232,225,.74)}
+  html[data-theme="dark"] .twk-x{color:rgba(236,232,225,.6)}
+  html[data-theme="dark"] .twk-x:hover{background:rgba(255,255,255,.1);color:#fff}
+  html[data-theme="dark"] .twk-field,html[data-theme="dark"] .twk-num{background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.15);color:#ece8e1}
+  html[data-theme="dark"] .twk-field:focus{background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.3)}
+  html[data-theme="dark"] select.twk-field{background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='rgba(255,255,255,.6)' d='M0 0h10L5 6z'/></svg>")}
+  html[data-theme="dark"] .twk-seg{background:rgba(255,255,255,.08)}
+  html[data-theme="dark"] .twk-seg-thumb{background:rgba(255,255,255,.22)}
+  html[data-theme="dark"] .twk-slider{background:rgba(255,255,255,.15)}
+  html[data-theme="dark"] .twk-btn.secondary{background:rgba(255,255,255,.1);color:#ece8e1}
+  html[data-theme="dark"] .twk-btn.secondary:hover{background:rgba(255,255,255,.16)}
 `;
 
 function useTweaks(defaults) {
@@ -163,6 +187,14 @@ function TweaksPanel({ title = 'Tweaks', children }) {
     window.parent.postMessage({ type: '__edit_mode_dismissed' }, '*');
   };
 
+  // Esc closes the settings panel (keyboard accessibility)
+  React.useEffect(() => {
+    if (!open) return;
+    const onKey = (e) => { if (e.key === 'Escape') dismiss(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
+
   const onDragStart = (e) => {
     const panel = dragRef.current;
     if (!panel) return;
@@ -195,10 +227,11 @@ function TweaksPanel({ title = 'Tweaks', children }) {
     <>
       <style>{__TWEAKS_STYLE}</style>
       <div ref={dragRef} className="twk-panel" data-omelette-chrome=""
+           role="dialog" aria-modal="false" aria-label={title}
            style={{ right: offsetRef.current.x, bottom: offsetRef.current.y }}>
         <div className="twk-hd" onMouseDown={onDragStart}>
           <b>{title}</b>
-          <button className="twk-x" aria-label="Close tweaks"
+          <button className="twk-x" aria-label="Close settings"
                   onMouseDown={(e) => e.stopPropagation()}
                   onClick={dismiss}>✕</button>
         </div>

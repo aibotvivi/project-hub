@@ -118,6 +118,7 @@ button { font-family: inherit; cursor: pointer; }
   color: oklch(0.42 0.14 182); background: oklch(0.93 0.05 182); border: 1px solid oklch(0.84 0.08 182);
   border-radius: 6px; padding: 2px 7px; white-space: nowrap;
 }
+.topnav-brand-right { display: flex; align-items: center; gap: 8px; }
 .brand { display: flex; align-items: center; gap: 9px; white-space: nowrap; }
 .brand-mark { color: var(--accent); font-size: 14px; transform: translateY(-1px); }
 .brand-name { font-weight: 600; font-size: 15px; letter-spacing: -0.01em; }
@@ -495,6 +496,10 @@ button { font-family: inherit; cursor: pointer; }
   text-transform: uppercase; color: oklch(0.5 0.15 260); display: block; margin-bottom: 2px;
 }
 .goals-banner-text { font-size: 12px; color: var(--ink-2); line-height: 1.5; margin: 0; }
+.goals-banner-list { margin: 3px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 3px; }
+.goals-banner-list li { font-size: 12px; color: var(--ink-2); line-height: 1.45; padding-left: 14px; position: relative; }
+.goals-banner-list li::before { content: "•"; position: absolute; left: 2px; color: oklch(0.55 0.13 260); font-weight: 700; }
+html[data-theme="dark"] .goals-banner-list li::before { color: oklch(0.72 0.12 260); }
 .goals-banner-toggle {
   font-size: 11px; color: oklch(0.5 0.15 260); background: none; border: none;
   cursor: pointer; flex: none; padding: 2px 4px; border-radius: 4px; font-weight: 500;
@@ -1036,9 +1041,9 @@ html[data-theme="dark"] .status-pill { filter: brightness(0.85) saturate(1.1); }
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
 
-<script src="data.jsx?v=44"></script>
-<script type="text/babel" src="tweaks-panel.jsx?v=44"></script>
-<script type="text/babel" src="components.jsx?v=44"></script>
-<script type="text/babel" src="app.jsx?v=44"></script>
+<script src="data.jsx?v=45"></script>
+<script type="text/babel" src="tweaks-panel.jsx?v=45"></script>
+<script type="text/babel" src="components.jsx?v=45"></script>
+<script type="text/babel" src="app.jsx?v=45"></script>
 </body>
 </html>

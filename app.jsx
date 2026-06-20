@@ -20,6 +20,15 @@ function formatMsgTime() {
 }
 function setMode(m) { localStorage.setItem("hub_mode", m); }
 
+// ── Model selection (proxy mode) ──────────────────────────────────────────
+const MODELS = [
+  { value: "claude-sonnet-4-6",         label: "Sonnet 4.6" },
+  { value: "claude-opus-4-8",           label: "Opus 4.8" },
+  { value: "claude-haiku-4-5-20251001", label: "Haiku 4.5" },
+];
+function getModel() { return localStorage.getItem("hub_model") || "claude-sonnet-4-6"; }
+function setModelChoice(m) { localStorage.setItem("hub_model", m); }
+
 // ── Theme (light / dark) ──────────────────────────────────────────────────
 function getTheme() { return localStorage.getItem("hub_theme") || "light"; }
 function applyTheme(theme) {
@@ -101,6 +110,12 @@ function saveAutoThreads(data) {
 }
 function uid() { return Math.random().toString(36).slice(2, 9); }
 
+// Track when each project was last worked on, to surface recent ones first
+function getProjectUsage() {
+  try { return JSON.parse(localStorage.getItem("hub_project_usage") || "{}"); } catch { return {}; }
+}
+function saveProjectUsage(u) { localStorage.setItem("hub_project_usage", JSON.stringify(u)); }
+
 // ── Webhook storage ───────────────────────────────────────────────────────
 function getWebhooks() {
   try { return JSON.parse(localStorage.getItem("hub_webhooks") || "{}"); } catch { return {}; }
@@ -144,7 +159,7 @@ async function callClaudeProxy({ systemPrompt, messages, onChunk, onDone, backgr
     const res = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ systemPrompt, messages, background: !!background }),
+      body: JSON.stringify({ systemPrompt, messages, background: !!background, model: getModel() }),
     });
     if (!res.ok) { onChunk(`⚠️ Server error ${res.status}`); onDone(); return; }
 
@@ -197,7 +212,7 @@ async function callClaude({ systemPrompt, messages, onChunk, onDone, background 
       "content-type": "application/json",
     },
     body: JSON.stringify({
-      model: "claude-sonnet-4-6",
+      model: getModel(),
       max_tokens: 1024,
       stream: true,
       system: systemPrompt,
@@ -910,7 +925,15 @@ function App() {
   const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
   const data = window.HUB_DATA;
   const [userProjects, setUserProjects] = useState(getStoredProjects);
-  const allProjects = useMemo(() => [...data.projects, ...userProjects], [userProjects]);
+  const [projectUsage, setProjectUsage] = useState(getProjectUsage);
+  const allProjects = useMemo(() => {
+    const merged = [...data.projects, ...userProjects];
+    // Most recently worked-on projects first; unseen keep their natural order.
+    return merged
+      .map((p, i) => ({ p, i }))
+      .sort((a, b) => (projectUsage[b.p.id] || 0) - (projectUsage[a.p.id] || 0) || a.i - b.i)
+      .map((x) => x.p);
+  }, [userProjects, projectUsage]);
   const [projectId, setProjectId] = useState(data.projects[0].id);
   const project = allProjects.find((p) => p.id === projectId) || allProjects[0];
   const [memberId, setMemberId] = useState(project.members[0].id);
@@ -924,6 +947,7 @@ function App() {
   const [action, setAction] = useState(null);
   const [showNewProject, setShowNewProject] = useState(false);
   const [theme, setThemeState] = useState(getTheme);
+  const [model, setModelState] = useState(getModel);
   const [webhooks, setWebhooks] = useState(getWebhooks);
   const [autoThreads, setAutoThreads] = useState(getStoredAutoThreads);
   const [working, setWorking] = useState({});
@@ -939,6 +963,14 @@ function App() {
   const hydratedRef = useRef(false);
   const streamingRef = useRef(false);
 
+  function markProjectUsed(id) {
+    setProjectUsage((prev) => {
+      const next = { ...prev, [id]: Date.now() };
+      saveProjectUsage(next);
+      return next;
+    });
+  }
+
   function selectProject(id) {
     const p = allProjects.find((x) => x.id === id);
     setProjectId(id);
@@ -946,6 +978,7 @@ function App() {
     setTab("all");
     setDateFilter(null);
     setFocusedId(null);
+    markProjectUsed(id);
   }
   function selectMember(id) { setMemberId(id); setTab("all"); setDateFilter(null); setFocusedId(null); }
 
@@ -957,6 +990,7 @@ function App() {
     setProjectId(proj.id);
     setMemberId(proj.members[0].id);
     setTab("all"); setDateFilter(null); setFocusedId(null);
+    markProjectUsed(proj.id);
   }
 
   function msgsFor(thread) { return [...thread.messages, ...(extra[thread.id] || [])]; }
@@ -1268,19 +1302,21 @@ BODY: <2-4 sentences of your update, OR your specific question to the founder>`;
             <span className="brand-mark">◆</span>
             <span className="brand-name">Project&nbsp;Hub</span>
           </div>
-          <button
-            className={"just-ship-toggle" + (justShipIt ? " is-on" : "")}
-            onClick={toggleShipMode}
-            title={justShipIt ? "Autonomous — team decides independently. Click to switch." : "Collaborative — team asks questions. Click for autonomous."}
-          >
-            <span className="just-ship-dot" />
-            {justShipIt ? "Autonomous" : "Collaborative"}
-          </button>
-          <button className="theme-toggle" onClick={toggleTheme}
-            title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}>
-            {theme === "dark" ? "☀" : "☾"}
-          </button>
-          <ProjectSwitcher projects={allProjects} activeId={projectId} onSelect={selectProject} onNewProject={() => setShowNewProject(true)} />
+          <div className="topnav-brand-right">
+            <button className="theme-toggle" onClick={toggleTheme}
+              title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}>
+              {theme === "dark" ? "☀" : "☾"}
+            </button>
+            <ProjectSwitcher projects={allProjects} activeId={projectId} onSelect={selectProject} onNewProject={() => setShowNewProject(true)} />
+            <button
+              className={"just-ship-toggle just-ship-side" + (justShipIt ? " is-on" : "")}
+              onClick={toggleShipMode}
+              title={justShipIt ? "Autonomous — team decides independently. Click to switch." : "Collaborative — team asks questions. Click for autonomous."}
+            >
+              <span className="just-ship-dot" />
+              {justShipIt ? "Autonomous" : "Collaborative"}
+            </button>
+          </div>
         </div>
         <div className="topnav-members">
           <span className="topnav-members-label">Team</span>
@@ -1409,6 +1445,9 @@ BODY: <2-4 sentences of your update, OR your specific question to the founder>`;
         <TweakRadio label="Powered by" value={getMode()}
           options={[{ value: "proxy", label: "Claude Code" }, { value: "direct", label: "API key" }]}
           onChange={(v) => { setMode(v); window.location.reload(); }} />
+        <TweakSelect label="Model" value={model}
+          options={MODELS}
+          onChange={(v) => { setModelChoice(v); setModelState(v); }} />
         <TweakSection label="Integrations" />
         <TweakText label="Instagram" value={webhooks.instagram || ""} placeholder="hooks.zapier.com/…"
           onChange={(v) => updateWebhook("instagram", v)} />
